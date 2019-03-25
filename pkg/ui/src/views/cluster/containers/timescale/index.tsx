@@ -14,6 +14,7 @@
 
 import React from "react";
 import { connect } from "react-redux";
+import { withRouter, WithRouterProps } from "react-router";
 import _ from "lodash";
 import moment from "moment";
 
@@ -28,6 +29,7 @@ import { LocalSetting } from "src/redux/localsettings";
 
 import { INodeStatus } from "src/util/proto";
 import { LongToMoment } from "src/util/convert";
+import {TimeScale} from "src/redux/timewindow";
 
 // Tracks whether the default timescale been set once in the app. Tracked across
 // the entire app so that changing pages doesn't cause it to reset.
@@ -84,14 +86,54 @@ interface TimeScaleDropdownProps {
   defaultTimescaleSet: boolean;
 }
 
+interface UrlState {
+  window: string;
+}
+
 // TimeScaleDropdown is the dropdown that allows users to select the time range
 // for graphs.
-class TimeScaleDropdown extends React.Component<TimeScaleDropdownProps, {}> {
+class TimeScaleDropdown extends React.Component<TimeScaleDropdownProps & WithRouterProps, {}> {
   changeSettings = (newTimescaleKey: DropdownOption) => {
     const newSettings = timewindow.availableTimeScales[newTimescaleKey.value];
     if (newSettings) {
-      this.props.setTimeScale(newSettings);
+      this.updateTimeScale(newSettings);
     }
+  }
+
+  updateTimeScale(newSettings: TimeScale) {
+    debugger;
+    this.props.setTimeScale(newSettings);
+    const window = JSON.stringify(newSettings);
+    this.updateUrl({
+      window,
+    });
+  }
+
+  updateUrl(newState: Partial<UrlState>) {
+    const pathname = this.props.location.pathname;
+    this.props.router.push({
+      pathname,
+      query: _.assign({}, this.props.location.query, newState),
+    });
+  }
+
+  getTimeScaleFromUrl(): boolean {
+    // TODO(celia) - was trying to figure out why this wasn't working.
+    // TODO(celia) - set debugger and confirm this; but I think the
+    // parsing is returning strings; so I would still need to convert
+    // them back to times and durations (e.g. moment.duration(foo)).
+    console.log(this.props.defaultTimescaleSet);
+    return false;
+    if (this.props.defaultTimescaleSet) {
+      return false;
+    }
+    try {
+      const newSettings = JSON.parse(this.props.location.query.window);
+      this.updateTimeScale(newSettings);
+      return true;
+    } catch (e) {
+    }
+    return false;
   }
 
   arrowClick = (direction: ArrowDirection) => {
@@ -118,8 +160,7 @@ class TimeScaleDropdown extends React.Component<TimeScaleDropdownProps, {}> {
     } else {
       selected.key = "Custom";
     }
-
-    this.props.setTimeScale(selected);
+    this.updateTimeScale(selected);
   }
 
   getTimescaleOptions = () => {
@@ -140,17 +181,19 @@ class TimeScaleDropdown extends React.Component<TimeScaleDropdownProps, {}> {
   }
 
   // Sets the default timescale based on the start time of the oldest node.
-  setDefaultTime(props = this.props) {
+  setDefaultTime(props: TimeScaleDropdownProps = this.props) {
     if (props.nodeStatusesValid && !props.defaultTimescaleSet) {
-      const oldestNode = _.minBy(props.nodeStatuses, (nodeStatus: INodeStatus) => nodeStatus.started_at);
-      const clusterStarted = LongToMoment(oldestNode.started_at);
-      // TODO (maxlang): This uses the longest uptime, not the oldest
-      const clusterDurationHrs = moment.utc().diff(clusterStarted, "hours");
-      if (clusterDurationHrs > 1) {
-        if (clusterDurationHrs < 6) {
-          props.setTimeScale(props.availableScales["1 hour"]);
-        } else if (clusterDurationHrs < 12) {
-          props.setTimeScale(props.availableScales["6 hours"]);
+      if (!this.getTimeScaleFromUrl()) {
+        const oldestNode = _.minBy(props.nodeStatuses, (nodeStatus: INodeStatus) => nodeStatus.started_at);
+        const clusterStarted = LongToMoment(oldestNode.started_at);
+        // TODO (maxlang): This uses the longest uptime, not the oldest
+        const clusterDurationHrs = moment.utc().diff(clusterStarted, "hours");
+        if (clusterDurationHrs > 1) {
+          if (clusterDurationHrs < 6) {
+            this.updateTimeScale(props.availableScales["1 hour"]);
+          } else if (clusterDurationHrs < 12) {
+            this.updateTimeScale(props.availableScales["6 hours"]);
+          }
         }
       }
       props.setDefaultSet(true);
@@ -213,4 +256,4 @@ export default connect(
     refreshNodes: refreshNodes,
     setDefaultSet: timescaleDefaultSet.set,
   },
-)(TimeScaleDropdown);
+)(withRouter(TimeScaleDropdown));

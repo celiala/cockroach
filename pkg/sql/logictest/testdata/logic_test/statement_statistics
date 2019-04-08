@@ -181,5 +181,19 @@ SELECT _  true    true      true     true    true
 
 # Check that statements made in implicit transactions are separated from those
 # that are not.
+
+statement ok
+SET application_name = 'implicit_txn_test'
+
+statement ok
+BEGIN; SELECT x FROM test where y=1; COMMIT;
+
+statement ok
+SELECT z FROM test where y=2;
+
 query TB colnames
-SELECT key, implicit_txn FROM crdb_internal.node_statement_statistics
+SELECT key, implicit_txn FROM crdb_internal.node_statement_statistics  WHERE application_name = 'implicit_txn_test'
+----
+key  implicit_txn
+SELECT x FROM test WHERE y = _  false
+SELECT z FROM test WHERE y = _  true

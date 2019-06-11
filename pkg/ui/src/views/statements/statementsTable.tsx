@@ -27,7 +27,9 @@ import "./statements.styl";
 const longToInt = (d: number | Long) => FixLong(d).toInt();
 
 export interface AggregateStatistics {
+  // label is either shortStatement (statementsPage) or node (statementDetails).
   label: string;
+  implicit_txn: string;
   stats: StatementStatistics;
 }
 
@@ -134,6 +136,12 @@ function makeCommonColumns(statements: AggregateStatistics[])
       className: "statements-table__col-time",
       cell: (stmt) => Duration(calculateCumulativeTime(stmt.stats) * 1e9),
       sort: (stmt) => calculateCumulativeTime(stmt.stats),
+    },
+    {
+      title: "Test",
+      className: "statements-table__col-time",
+      cell: (stmt) => stmt.implicit_txn,
+      sort: (stmt) => stmt.implicit_txn,
     },
     {
       title: "Execution Count",

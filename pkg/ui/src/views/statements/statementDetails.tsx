@@ -36,6 +36,7 @@ import { ToolTipWrapper } from "src/views/shared/components/toolTip";
 
 import { countBreakdown, rowsBreakdown, latencyBreakdown, approximify } from "./barCharts";
 import { AggregateStatistics, StatementsSortedTable, makeNodesColumns } from "./statementsTable";
+import {Params} from "react-router/lib/Router";
 
 interface Fraction {
   numerator: number;
@@ -384,18 +385,27 @@ function renderBools(fraction: Fraction) {
 
 type StatementsState = Pick<AdminUIState, "cachedData", "statements">;
 
+// TODO(celia) Add implicit_txn to key.
+function nodeStatsKey(stat: ExecutionStatistics): string {
+  return stat.node_id.toString();
+}
+
 function coalesceNodeStats(stats: ExecutionStatistics[]): AggregateStatistics[] {
-  const byNode: { [nodeId: string]: StatementStatistics[] } = {};
+  // TODO(celia) - may not need to change to ExecutionStatistics.
+  const byNode: { [nodeId: string]: ExecutionStatistics[] } = {};
 
   stats.forEach(stmt => {
-    const nodeStats = (byNode[stmt.node_id] = byNode[stmt.node_id] || []);
-    nodeStats.push(stmt.stats);
+    const key = nodeStatsKey(stmt);
+    const nodeStats = (byNode[key] = byNode[key] || []);
+    nodeStats.push(stmt);
   });
 
   return Object.keys(byNode).map(nodeId => ({
       label: nodeId,
-      stats: combineStatementStats(byNode[nodeId]),
-  }));
+      // TODO(celia) -- somehow extract implicit_txn
+      implicit_txn: "bar",
+      stats: combineStatementStats(byNode[nodeId].map(execStats => execStats.stats)),
+    }));
 }
 
 function fractionMatching(stats: ExecutionStatistics[], predicate: (stmt: ExecutionStatistics) => boolean): Fraction {
@@ -413,6 +423,20 @@ function fractionMatching(stats: ExecutionStatistics[], predicate: (stmt: Execut
   return { numerator, denominator };
 }
 
+// TODO(celia) -- Add filter by implicit_txn.
+function filterStatements(params: Params, stmt: ExecutionStatistics): boolean {
+  const statement = params[statementAttr];
+  let app = params[appAttr];
+
+  if (app) {
+    if (app === "(unset)") {
+      app = "";
+    }
+    return stmt.statement === statement && stmt.app === app;
+  }
+  return stmt.statement === statement;
+}
+
 export const selectStatement = createSelector(
   (state: StatementsState) => state.cachedData.statements.data && state.cachedData.statements.data.statements,
   (_state: StatementsState, props: { params: { [key: string]: string } }) => props,
@@ -422,18 +446,8 @@ export const selectStatement = createSelector(
     }
 
     const statement = props.params[statementAttr];
-    let app = props.params[appAttr];
-    let predicate = (stmt: ExecutionStatistics) => stmt.statement === statement;
-
-    if (app) {
-        if (app === "(unset)") {
-            app = "";
-        }
-        predicate = (stmt: ExecutionStatistics) => stmt.statement === statement && stmt.app === app;
-    }
-
     const flattened = flattenStatementStats(statements);
-    const results = _.filter(flattened, predicate);
+    const results = _.filter(flattened, (stmt: ExecutionStatistics) => filterStatements(props.params, stmt));
 
     return {
       statement,

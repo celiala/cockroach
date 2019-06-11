@@ -36,6 +36,7 @@ import { AggregateStatistics, StatementsSortedTable, makeStatementsColumns } fro
 
 import * as protos from "src/js/protos";
 import "./statements.styl";
+import {Params} from "react-router/lib/Router";
 
 type ICollectedStatementStatistics = protos.cockroach.server.serverpb.StatementsResponse.ICollectedStatementStatistics;
 type RouteProps = RouteComponentProps<any, any>;
@@ -166,6 +167,23 @@ class StatementsPage extends React.Component<StatementsPageProps & RouteProps, S
 
 type StatementsState = Pick<AdminUIState, "cachedData", "statements">;
 
+function filterStatements(appPrefix: string, params: Params, stmt: ExecutionStatistics): boolean {
+  let criteria = params[appAttr];
+  let showInternal = false;
+  if (criteria === "(unset)") {
+    criteria = "";
+  } else if (criteria === "(internal)") {
+    showInternal = true;
+  }
+
+  return (showInternal && stmt.app.startsWith(appPrefix)) || stmt.app === criteria;
+}
+
+// TODO(celia) Add implicit_txn to key.
+function statmentStatsKey(stat: ExecutionStatistics): string {
+  return stat.node_id.toString();
+}
+
 // selectStatements returns the array of AggregateStatistics to show on the
 // StatementsPage, based on if the appAttr route parameter is set.
 export const selectStatements = createSelector(
@@ -178,22 +196,15 @@ export const selectStatements = createSelector(
 
     let statements = flattenStatementStats(state.data.statements);
     if (props.params[appAttr]) {
-      let criteria = props.params[appAttr];
-      let showInternal = false;
-      if (criteria === "(unset)") {
-        criteria = "";
-      } else if (criteria === "(internal)") {
-        showInternal = true;
-      }
-
+      const appPrefix = state.data.internal_app_name_prefix;
       statements = statements.filter(
-        (statement: ExecutionStatistics) => (showInternal && statement.app.startsWith(state.data.internal_app_name_prefix)) || statement.app === criteria,
-      );
+        (stmt: ExecutionStatistics) => filterStatements(appPrefix, props.params, stmt));
     }
 
     const statementsMap: { [statement: string]: StatementStatistics[] } = {};
     statements.forEach(stmt => {
-      const matches = statementsMap[stmt.statement] || (statementsMap[stmt.statement] = []);
+      const key = statmentStatsKey(stmt);
+      const matches = statementsMap[key] || (statementsMap[key] = []);
       matches.push(stmt.stats);
     });
 
@@ -201,6 +212,8 @@ export const selectStatements = createSelector(
       const stats = statementsMap[stmt];
       return {
         label: stmt,
+        // TODO(celia) -- somehow extract implicit_txn
+        implicit_txn: "Foo",
         stats: combineStatementStats(stats),
       };
     });

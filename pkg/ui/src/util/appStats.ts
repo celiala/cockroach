@@ -20,6 +20,7 @@ import { FixLong } from "src/util/fixLong";
 import ISensitiveInfo = protos.cockroach.sql.ISensitiveInfo;
 
 export type StatementStatistics = protos.cockroach.sql.IStatementStatistics;
+export type StatementStatisticsKey = protos.cockroach.sql.IStatementStatisticsKey;
 export type CollectedStatementStatistics = protos.cockroach.server.serverpb.StatementsResponse.ICollectedStatementStatistics;
 
 export interface NumericStat {
@@ -73,11 +74,17 @@ export function coalesceSensitiveInfo(a: ISensitiveInfo, b: ISensitiveInfo) {
   };
 }
 
+// TODO(celia) -- Add implicit_txn to key.
+function statementStatsKey(keyData: StatementStatisticsKey): string {
+  return keyData.query;
+}
+
 export function aggregateStatementStats(statementStats: CollectedStatementStatistics[]) {
   const statementsMap: { [statement: string]: CollectedStatementStatistics[] } = {};
   statementStats.forEach(
     (statement: CollectedStatementStatistics) => {
-      const matches = statementsMap[statement.key.key_data.query] || (statementsMap[statement.key.key_data.query] = []);
+      const key = statementStatsKey(statement.key.key_data);
+      const matches = statementsMap[key] || (statementsMap[key] = []);
       matches.push(statement);
   });
 

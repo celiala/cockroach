@@ -37,7 +37,7 @@ func TestSampledStmtDiagReqsMigration(t *testing.T) {
 	defer leaktest.AfterTest(t)()
 	defer log.Scope(t).Close(t)
 
-	skip.WithIssue(t, 95530, "bump minBinary to 22.2. Skip 22.2 mixed-version tests for future cleanup")
+	skip.WithIssue(t, 96765, "kv: remove V22_2 gates and related logic/migrations/etc")
 
 	clusterArgs := base.TestClusterArgs{
 		ServerArgs: base.TestServerArgs{

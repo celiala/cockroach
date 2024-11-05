@@ -255,6 +255,9 @@ const (
 	// to the system.table_metadata table
 	V24_3_AddTableMetadataCols
 
+	// V24_3 is CockroachDB v24.3. It's used for all v24.3.x patch releases.
+	V24_3
+
 	// *************************************************
 	// Step (1) Add new versions above this comment.
 	// Do not add new versions to a patch release.
@@ -314,6 +317,9 @@ var versionTable = [numKeys]roachpb.Version{
 	V24_3_UseRACV2Full:                                 {Major: 24, Minor: 2, Internal: 20},
 	V24_3_AddTableMetadataCols:                         {Major: 24, Minor: 2, Internal: 22},
 
+	// v24.3 versions. Internal versions must be even.
+	V24_3: {Major: 24, Minor: 3, Internal: 0},
+
 	// *************************************************
 	// Step (2): Add new versions above this comment.
 	// Do not add new versions to a patch release.
@@ -332,14 +338,6 @@ const MinSupported Key = V24_1
 // Note: this is always the last element of SupportedPreviousReleases(); it is
 // also provided as a constant for convenience.
 const PreviousRelease Key = V24_2
-
-// V24_3 is a placeholder that will eventually be replaced by the actual 24.3
-// version Key, but in the meantime it points to the latest Key. The placeholder
-// is defined so that it can be referenced in code that simply wants to check if
-// a cluster is running 24.3 and has completed all associated migrations; most
-// version gates can use this instead of defining their own version key if they
-// only need to check that the cluster has upgraded to 24.3.
-const V24_3 = Latest
 
 // DevelopmentBranch must be true on the main development branch but should be
 // set to false on a release branch once the set of versions becomes append-only

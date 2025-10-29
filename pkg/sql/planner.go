@@ -34,8 +34,6 @@ import (
 	"github.com/cockroachdb/cockroach/pkg/sql/clusterunique"
 	"github.com/cockroachdb/cockroach/pkg/sql/evalcatalog"
 	"github.com/cockroachdb/cockroach/pkg/sql/exprutil"
-	"github.com/cockroachdb/cockroach/pkg/sql/hintpb"
-	"github.com/cockroachdb/cockroach/pkg/sql/hints"
 	"github.com/cockroachdb/cockroach/pkg/sql/idxusage"
 	"github.com/cockroachdb/cockroach/pkg/sql/parser"
 	"github.com/cockroachdb/cockroach/pkg/sql/prep"
@@ -237,15 +235,6 @@ type planner struct {
 	preparedStatements preparedStatementsAccessor
 
 	sqlCursors sqlCursors
-
-	// routineMetadataForwarder, if set, is used to propagate ProducerMetadata
-	// out of the routine execution.
-	// TODO(yuzefovich): this is rather ugly, but the routines are expressions,
-	// so we don't have easy access to the DistSQL infrastructure. Additionally,
-	// we don't want to mutate the eval.Context for this. It seems fine given
-	// that we only have local plans with routines and there should be no
-	// concurrency.
-	routineMetadataForwarder metadataForwarder
 
 	storedProcTxnState storedProcTxnStateAccessor
 
@@ -986,7 +975,6 @@ func (p *planner) resetPlanner(
 	p.skipDescriptorCache = false
 	p.typeResolutionDbID = descpb.InvalidID
 	p.pausablePortal = nil
-	p.routineMetadataForwarder = nil
 	p.autoRetryCounter = 0
 	p.autoRetryStmtReason = nil
 	p.autoRetryStmtCounter = 0
@@ -1079,9 +1067,8 @@ func (p *planner) ClearTableStatsCache() {
 	}
 }
 
-// innerPlansMustUseLeafTxn returns true if inner plans must use a leaf
-// transaction.
-func (p *planner) innerPlansMustUseLeafTxn() bool {
+// mustUseLeafTxn returns true if inner plans must use a leaf transaction.
+func (p *planner) mustUseLeafTxn() bool {
 	return atomic.LoadInt32(&p.atomic.innerPlansMustUseLeafTxn) >= 1
 }
 
@@ -1109,11 +1096,4 @@ func (p *planner) ProcessVectorIndexFixups(
 		return err
 	}
 	return vi.ProcessFixups(ctx)
-}
-
-// InsertStatementHint is part of the eval.Planner interface.
-func (p *planner) InsertStatementHint(
-	ctx context.Context, statementFingerprint string, hint hintpb.StatementHintUnion,
-) (int64, error) {
-	return hints.InsertHintIntoDB(ctx, p.InternalSQLTxn(), statementFingerprint, hint)
 }

@@ -28,16 +28,12 @@ func Run(t T, cfg Config) Result {
 
 	q := makeReplicaQueue(cfg.NumReplicas)
 
+	var wg sync.WaitGroup
 	s := newAggStats()
 
-	statsCtx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-	var bgWG sync.WaitGroup
-	bgWG.Add(1)
-	go func() {
-		defer bgWG.Done()
-		statsLoop(t, statsCtx, cfg, s, raftEng, smEng)
-	}()
+	statsCtx, stopStats := context.WithCancel(context.Background())
+	defer stopStats()
+	go statsLoop(t, statsCtx, cfg, s, raftEng, smEng)
 
 	o := writeOptions{
 		cfg: cfg, smEng: smEng, raftEng: raftEng,
@@ -45,15 +41,13 @@ func Run(t T, cfg Config) Result {
 	}
 	var durabilityCallbackCount atomic.Int64
 	tStartWorkers := timeutil.Now()
-
-	var workerWG sync.WaitGroup
 	for i := 0; i < cfg.NumWorkers; i++ {
-		workerWG.Add(1)
+		wg.Add(1)
 		w := &worker{
 			t: t, s: s, o: o, rng: rand.New(rand.NewSource(int64(i))),
 			durabilityCallbackCount: &durabilityCallbackCount,
 		}
-		go w.run(t, q, &workerWG)
+		go w.run(t, q, &wg)
 	}
 	logf(t, "started workers")
 
@@ -69,9 +63,7 @@ func Run(t T, cfg Config) Result {
 		var bytesFlushed uint64
 		var n int
 		notifyCh := make(chan struct{}, 1)
-		bgWG.Add(1)
 		go func() {
-			defer bgWG.Done()
 			for {
 				select {
 				case <-statsCtx.Done():
@@ -95,9 +87,8 @@ func Run(t T, cfg Config) Result {
 		})
 	}
 
-	workerWG.Wait()
-	cancelCtx()
-	bgWG.Wait() // make sure all goroutines are stopped by time engine closes
+	wg.Wait()
+	stopStats()
 	duration := timeutil.Since(tStartWorkers)
 	logf(t, "done working")
 

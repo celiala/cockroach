@@ -1523,6 +1523,36 @@ grep -A 2 '"25.4":' pkg/testutils/release/cockroach_releases.yaml
 grep "25.4.0-rc.1" pkg/sql/logictest/REPOSITORIES.bzl
 ```
 
+**⚠️ CRITICAL: Manually Verify REPOSITORIES.bzl**
+
+The `release update-releases-file` tool may **incorrectly remove** older version configs that are still needed by active testserver configurations.
+
+**Check which testserver configs are active:**
+```bash
+grep "cockroach-go-testserver-" pkg/sql/logictest/logictestbase/logictestbase.go | grep "Name:"
+```
+
+**Verify REPOSITORIES.bzl has binaries for ALL active testserver versions:**
+```bash
+# Example: If you see 25.2, 25.3, 25.4 configs, verify all are in REPOSITORIES.bzl
+grep -E "^\s+\(\"25\.[0-9]" pkg/sql/logictest/REPOSITORIES.bzl
+```
+
+**If a needed version is missing** (e.g., tool removed 25.2.7 but cockroach-go-testserver-25.2 still exists):
+1. Get the old config from before M.3:
+   ```bash
+   git show HEAD^:pkg/sql/logictest/REPOSITORIES.bzl | grep -A 4 "25.2.7"
+   ```
+2. Manually restore it to REPOSITORIES.bzl (add it back to the _CONFIGS list)
+3. Verify all active testserver versions are present
+
+**Example from PR #156535:**
+- Tool incorrectly removed 25.2.7
+- But cockroach-go-testserver-25.2 still exists and needs those binaries
+- Had to manually restore 25.2.7 entries
+
+**Pattern:** Keep N-2, N-1, and N (current) release binaries until their testserver configs are removed.
+
 **d) Commit the releases file update:**
 ```bash
 git add pkg/testutils/release/cockroach_releases.yaml pkg/sql/logictest/REPOSITORIES.bzl
@@ -2410,6 +2440,101 @@ st := cluster.MakeTestingClusterSettingsWithVersions(
 // RATIONALE: This test is checking immediate-mode writer behavior on a
 // current-version cluster, not testing upgrade from 25.3. The binary
 // version should match the new PreviousRelease.
+```
+
+### CRITICAL: Validate Changes Before Creating PR
+
+This is a **quarterly task** - validate your changes against previous M.3 PRs to ensure consistency and catch any missing or unexpected files.
+
+#### Reference PRs
+
+Compare your changes against these previous M.3 PRs:
+- **25.3 M.3 Combined PR**: #141765 (~12 files - fixtures + code in one PR)
+- **25.3 M.3 Fixtures PR**: #150712 (~6 files - fixtures only)
+- **25.3 M.3 Code PR**: #152080 (~9 files - code only)
+
+Use the combined PR as the primary reference if you're doing a single-PR approach, or the separate PRs if you're doing the two-PR approach.
+
+#### Expected File Counts
+
+**Single combined PR approach (~14 files):**
+- 4 fixture files: `pkg/cmd/roachtest/fixtures/{1,2,3,4}/checkpoint-v25.4.tgz`
+- 1 releases file: `pkg/testutils/release/cockroach_releases.yaml`
+- 1 repositories file: `pkg/sql/logictest/REPOSITORIES.bzl`
+- 1 version file: `pkg/clusterversion/cockroach_versions.go`
+- 1 deprules file: `pkg/cli/testdata/declarative-rules/deprules`
+- 1 BUILD.bazel: `pkg/BUILD.bazel` (visibility update)
+- 1 logictestbase: `pkg/sql/logictest/logictestbase/logictestbase.go`
+- 1 logictest BUILD: `pkg/sql/logictest/BUILD.bazel`
+- 2 generated test files: `pkg/sql/logictest/tests/cockroach-go-testserver-25.4/{BUILD.bazel,generated_test.go}`
+- Plus any test fixes (e.g., tests using V25_3 with PreviousRelease)
+
+**Two-PR approach:**
+- Fixtures PR: ~6 files (4 fixtures + releases.yaml + REPOSITORIES.bzl)
+- Code PR: ~9 files (versions.go, deprules, BUILD files, test configs, test fixes)
+
+#### How to Validate
+
+**1. Get file lists:**
+```bash
+# Your current PR files
+gh pr view <YOUR_PR_NUMBER> --json files --jq '.files[].path' | sort > /tmp/current_m3_files.txt
+
+# Reference PR files (use #141765 for combined, or #152080 for code-only)
+gh pr view 141765 --json files --jq '.files[].path' | sort > /tmp/ref_m3_combined.txt
+
+# Compare
+comm -3 /tmp/current_m3_files.txt /tmp/ref_m3_combined.txt
+```
+
+**2. Expected differences (version-specific files):**
+- Your PR will have `checkpoint-v25.4.tgz` files, reference has `checkpoint-v25.1.tgz` (or v25.3 for #141765)
+- Your PR will have `cockroach-go-testserver-25.4/` directory, reference has `cockroach-go-testserver-25.1/` (or 25.3)
+- Your PR may have `CLAUDE.md` updates with new documentation
+- Your PR may have additional test fixes (files with V25_3 → V25_4 updates)
+- Reference PR may have files specific to that quarter (e.g., mixed_version test files for bootstrap data updates)
+
+**3. Investigate if:**
+- File count differs by more than 3-4 files from reference
+- You're missing core files (fixtures, releases.yaml, REPOSITORIES.bzl, cockroach_versions.go)
+- You have unexpected package changes beyond test fixes
+
+**4. Review each unexpected file:**
+```bash
+# For each file only in your PR, understand why:
+gh pr diff <YOUR_PR_NUMBER> -- path/to/unexpected/file
+
+# Is it:
+# - A necessary test fix due to PreviousRelease bump? ✓ OK
+# - Documentation update? ✓ OK
+# - An unrelated change that should be in a separate PR? ❌ Remove
+```
+
+#### Validation Checklist
+
+Before creating/updating the M.3 PR:
+- [ ] Compared file list against reference PR (#141765 for combined, or #150712/#152080 for two-PR)
+- [ ] File count is within expected range (~14 for combined, ~6+9 for two-PR approach)
+- [ ] All core files are present (fixtures, releases, versions, test configs)
+- [ ] Version-specific differences explained (25.4 vs 25.1/25.3 files)
+- [ ] Any unexpected files justified and documented
+- [ ] No unrelated changes included
+- [ ] Test fixes follow context-aware guidelines (see "Error: Test failures with minimum supported version" above)
+
+**Example validation from PR #156535:**
+```bash
+$ comm -3 /tmp/current_m3_files.txt /tmp/ref_m3_combined.txt
+# Only in current (14 files):
+CLAUDE.md                                    # ← OK: New documentation
+checkpoint-v25.4.tgz (×4)                   # ← OK: Version-specific
+cockroach-go-testserver-25.4/ (×2)          # ← OK: Version-specific
+
+# Only in reference (12 files):
+README.md                                    # ← OK: Not needed in this PR
+mixed_version_stats, mixed_version_ttl      # ← OK: Bootstrap updates from M.2
+cockroach-go-testserver-25.1/ (×2)          # ← OK: Version-specific to that quarter
+
+# Conclusion: All differences explained and expected ✓
 ```
 
 ---

@@ -2940,11 +2940,7 @@ func TestGetWriterType(t *testing.T) {
 	})
 
 	t.Run("immediate-mode", func(t *testing.T) {
-		st := cluster.MakeTestingClusterSettingsWithVersions(
-			clusterversion.V25_3.Version(),
-			clusterversion.PreviousRelease.Version(),
-			true, /* initializeVersion */
-		)
+		st := cluster.MakeTestingClusterSettings()
 		sqlclustersettings.LDRImmediateModeWriter.Override(ctx, &st.SV, string(sqlclustersettings.LDRWriterTypeSQL))
 		wt, err := getWriterType(ctx, jobspb.LogicalReplicationDetails_Immediate, st)
 		require.NoError(t, err)
